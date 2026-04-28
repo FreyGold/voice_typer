@@ -2,6 +2,7 @@ import evdev
 from evdev import ecodes, UInput
 import threading
 import time
+import subprocess
 
 class TyperController:
     def __init__(self, on_press_callback, on_release_callback, hotkey="KEY_RIGHTALT", mode="hold"):
@@ -21,7 +22,7 @@ class TyperController:
             self.ui = None
 
     def update_settings(self, hotkey, mode):
-        self.trigger_code = getattr(ecodes, hotkey, ecodes.KEY_LEFTCTRL)
+        self.trigger_code = getattr(ecodes, hotkey, ecodes.KEY_RIGHTALT)
         self.mode = mode
         self.is_active = False
 
@@ -64,39 +65,43 @@ class TyperController:
         except: pass
 
     def type_text(self, text):
-        if not text or not self.ui: return
+        if not text: return
         
-        # Focus settle
-        time.sleep(0.1)
-        
-        key_map = {
-            ' ': ecodes.KEY_SPACE, '.': ecodes.KEY_DOT, ',': ecodes.KEY_COMMA,
-            '!': (ecodes.KEY_1, True), '?': (ecodes.KEY_SLASH, True),
-            ':': (ecodes.KEY_SEMICOLON, True), ';': ecodes.KEY_SEMICOLON,
-            '"': (ecodes.KEY_APOSTROPHE, True), "'": ecodes.KEY_APOSTROPHE,
-            '-': ecodes.KEY_MINUS, '_': (ecodes.KEY_MINUS, True),
-            '\n': ecodes.KEY_ENTER, '\t': ecodes.KEY_TAB
-        }
+        # Settle focus
+        time.sleep(0.2)
 
-        for char in text + " ":
+        # ARABIC & RELIABILITY FIX:
+        # Instead of simulating key-by-key, we use the CLIPBOARD method.
+        # This works perfectly with Arabic, emojis, and all languages on Wayland.
+        
+        try:
+            # 1. Copy text to clipboard using wl-copy (Wayland) or xclip (X11)
+            # We'll try wl-copy first as you are on Pop!_OS Wayland
+            copy_proc = subprocess.Popen(['wl-copy'], stdin=subprocess.PIPE)
+            copy_proc.communicate(input=(text + " ").encode('utf-8'))
+            
+            # 2. Trigger Ctrl+V using our virtual keyboard
+            if self.ui:
+                # Press Ctrl
+                self.ui.write(ecodes.EV_KEY, ecodes.KEY_LEFTCTRL, 1)
+                # Press V
+                self.ui.write(ecodes.EV_KEY, ecodes.KEY_V, 1)
+                self.ui.write(ecodes.EV_KEY, ecodes.KEY_V, 0)
+                # Release Ctrl
+                self.ui.write(ecodes.EV_KEY, ecodes.KEY_LEFTCTRL, 0)
+                self.ui.syn()
+                
+        except Exception as e:
+            print(f"Typing error: {e}")
+            # Fallback for X11 if wl-copy fails
             try:
-                is_shift = char.isupper()
-                code = None
-                if char in key_map:
-                    val = key_map[char]
-                    if isinstance(val, tuple): code, is_shift = val
-                    else: code = val
-                else:
-                    key_name = 'KEY_' + char.upper()
-                    code = getattr(ecodes, key_name, None)
-                
-                if code:
-                    if is_shift: self.ui.write(ecodes.EV_KEY, ecodes.KEY_LEFTSHIFT, 1)
-                    self.ui.write(ecodes.EV_KEY, code, 1)
-                    self.ui.write(ecodes.EV_KEY, code, 0)
-                    if is_shift: self.ui.write(ecodes.EV_KEY, ecodes.KEY_LEFTSHIFT, 0)
+                copy_proc = subprocess.Popen(['xclip', '-selection', 'clipboard'], stdin=subprocess.PIPE)
+                copy_proc.communicate(input=(text + " ").encode('utf-8'))
+                if self.ui:
+                    self.ui.write(ecodes.EV_KEY, ecodes.KEY_LEFTCTRL, 1)
+                    self.ui.write(ecodes.EV_KEY, ecodes.KEY_V, 1)
+                    self.ui.write(ecodes.EV_KEY, ecodes.KEY_V, 0)
+                    self.ui.write(ecodes.EV_KEY, ecodes.KEY_LEFTCTRL, 0)
                     self.ui.syn()
-                
-                # Tiny sleep for stability
-                time.sleep(0.005)
-            except: pass
+            except:
+                pass
