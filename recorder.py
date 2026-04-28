@@ -2,6 +2,8 @@ import subprocess
 import os
 import signal
 import time
+import numpy as np
+import wave
 
 class Recorder:
     def __init__(self, samplerate=16000, channels=1):
@@ -12,7 +14,6 @@ class Recorder:
         self.trimmed_filename = os.path.join(os.getcwd(), "temp_recording.wav")
 
     def start(self):
-        # Cleanup
         for f in [self.temp_filename, self.trimmed_filename]:
             if os.path.exists(f):
                 try: os.remove(f)
@@ -32,23 +33,53 @@ class Recorder:
             self.process = None
             
             if os.path.exists(self.temp_filename) and os.path.getsize(self.temp_filename) > 1000:
-                # Optimized ffmpeg command for faster silence removal
-                trim_cmd = [
-                    "ffmpeg", "-y", "-i", self.temp_filename,
-                    "-af", "silenceremove=start_threshold=-40dB:start_duration=0.1:stop_threshold=-40dB:stop_duration=0.1:stop_periods=-1",
-                    "-c:a", "pcm_s16le", self.trimmed_filename
-                ]
-                try:
-                    subprocess.run(trim_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
-                    if os.path.exists(self.trimmed_filename) and os.path.getsize(self.trimmed_filename) > 1000:
-                        return self.trimmed_filename
-                except:
-                    pass
-                return self.temp_filename
+                return self.trim_silence_python(self.temp_filename, self.trimmed_filename)
         return None
 
+    def trim_silence_python(self, input_file, output_file):
+        try:
+            with wave.open(input_file, 'rb') as wav:
+                params = wav.getparams()
+                frames = wav.readframes(params.nframes)
+                # Convert buffer to numpy array
+                audio_data = np.frombuffer(frames, dtype=np.int16)
+
+            # Calculate energy/amplitude
+            # Threshold: ~500 is a good starting point for -30dB approx
+            threshold = 500 
+            
+            # Find indices where amplitude exceeds threshold
+            mask = np.abs(audio_data) > threshold
+            if not np.any(mask):
+                return input_file # Fallback if entirely silent
+
+            # Get first and last active index
+            start_idx = np.argmax(mask)
+            end_idx = len(mask) - np.argmax(mask[::-1])
+
+            # Add a small padding (0.1s) to avoid clipping words
+            padding = int(0.1 * self.samplerate)
+            start_idx = max(0, start_idx - padding)
+            end_idx = min(len(audio_data), end_idx + padding)
+
+            trimmed_data = audio_data[start_idx:end_idx]
+
+            # Write trimmed file
+            with wave.open(output_file, 'wb') as wav_out:
+                wav_out.setparams(params)
+                wav_out.writeframes(trimmed_data.tobytes())
+
+            raw_size = os.path.getsize(input_file)
+            trim_size = os.path.getsize(output_file)
+            reduction = 100 - (trim_size / raw_size * 100)
+            print(f"Python Trim: {raw_size} -> {trim_size} bytes (Reduced {reduction:.1f}%)")
+            
+            return output_file
+        except Exception as e:
+            print(f"Python Trim Error: {e}")
+            return input_file
+
     def play_last(self):
-        if os.path.exists(self.trimmed_filename):
-            subprocess.Popen(["aplay", self.trimmed_filename], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        elif os.path.exists(self.temp_filename):
-            subprocess.Popen(["aplay", self.temp_filename], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        target = self.trimmed_filename if os.path.exists(self.trimmed_filename) else self.temp_filename
+        if os.path.exists(target):
+            subprocess.Popen(["aplay", target], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

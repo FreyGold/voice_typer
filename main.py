@@ -27,12 +27,8 @@ class VoiceTyperApp(QMainWindow):
         self.setWindowTitle("Voice Typer")
         self.setFixedSize(300, 240)
         
-        self.setWindowFlags(
-            Qt.WindowType.WindowStaysOnTopHint | 
-            Qt.WindowType.FramelessWindowHint |
-            Qt.WindowType.Tool
-        )
-        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        # Standard window flags to allow native Move and "Always on Top" control
+        self.setWindowFlags(Qt.WindowType.WindowStaysOnTopHint)
         
         self.signals = WorkerSignals()
         self.signals.status.connect(self.update_status)
@@ -55,7 +51,6 @@ class VoiceTyperApp(QMainWindow):
         
         self.is_recording = False
         self.is_loading_model = False
-        self._drag_pos = QPoint()
         
         self.setup_ui()
         self.typer.start_listening()
@@ -64,8 +59,8 @@ class VoiceTyperApp(QMainWindow):
         defaults = {"mode": None, "api_key": "", "hotkey": "KEY_RIGHTALT", "trigger_mode": "hold"}
         if os.path.exists(CONFIG_FILE):
             with open(CONFIG_FILE, "r") as f:
-                data = json.load(f)
-                defaults.update(data)
+                try: return json.load(f)
+                except: return defaults
         return defaults
 
     def save_config(self):
@@ -74,13 +69,8 @@ class VoiceTyperApp(QMainWindow):
 
     def setup_ui(self):
         self.main_container = QWidget()
-        self.main_container.setObjectName("MainContainer")
-        self.main_container.setStyleSheet("""
-            #MainContainer {
-                background-color: #1a1b26;
-                border: 2px solid #3d59a1;
-                border-radius: 12px;
-            }
+        self.setStyleSheet("""
+            QMainWindow { background-color: #1a1b26; }
             QLabel { color: #a9b1d6; font-family: 'Segoe UI', sans-serif; }
             QPushButton {
                 background-color: #24283b;
@@ -107,9 +97,7 @@ class VoiceTyperApp(QMainWindow):
                 border-radius: 2px;
                 text-align: center;
             }
-            QProgressBar::chunk {
-                background-color: #7aa2f7;
-            }
+            QProgressBar::chunk { background-color: #7aa2f7; }
             QTextEdit {
                 background-color: #24283b;
                 color: #9ece6a;
@@ -120,19 +108,7 @@ class VoiceTyperApp(QMainWindow):
         
         self.setCentralWidget(self.main_container)
         main_layout = QVBoxLayout(self.main_container)
-        main_layout.setContentsMargins(12, 12, 12, 12)
-        
-        header = QHBoxLayout()
-        title = QLabel("VOICE TYPER")
-        title.setStyleSheet("font-weight: bold; color: #7aa2f7; font-size: 10px; letter-spacing: 1px;")
-        header.addWidget(title)
-        
-        btn_close = QPushButton("×")
-        btn_close.setFixedSize(20, 20)
-        btn_close.setStyleSheet("border: none; font-size: 16px; color: #f7768e;")
-        btn_close.clicked.connect(self.close)
-        header.addWidget(btn_close)
-        main_layout.addLayout(header)
+        main_layout.setContentsMargins(10, 10, 10, 10)
 
         self.stack = QStackedWidget()
         main_layout.addWidget(self.stack)
@@ -148,6 +124,11 @@ class VoiceTyperApp(QMainWindow):
         layout = QVBoxLayout(page)
         layout.setSpacing(8)
         
+        label = QLabel("SETUP")
+        label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        label.setStyleSheet("font-weight: bold; color: #7aa2f7;")
+        layout.addWidget(label)
+        
         s_layout = QHBoxLayout()
         self.combo_key = QComboBox()
         self.combo_key.addItems(["KEY_RIGHTALT", "KEY_LEFTCTRL", "KEY_RIGHTCTRL", "KEY_LEFTALT", "KEY_SPACE"])
@@ -161,7 +142,7 @@ class VoiceTyperApp(QMainWindow):
         s_layout.addWidget(self.combo_mode)
         layout.addLayout(s_layout)
         
-        btn_local = QPushButton("LOCAL MODE (Small)")
+        btn_local = QPushButton("LOCAL MODE")
         btn_local.clicked.connect(lambda: self.start_app_with_mode("local"))
         layout.addWidget(btn_local)
         
@@ -170,7 +151,7 @@ class VoiceTyperApp(QMainWindow):
         if self.config["api_key"]: self.api_input.setText(self.config["api_key"])
         layout.addWidget(self.api_input)
         
-        btn_cloud = QPushButton("CLOUD MODE (Groq)")
+        btn_cloud = QPushButton("CLOUD MODE")
         btn_cloud.setStyleSheet("background-color: #3d59a1; font-weight: bold;")
         btn_cloud.clicked.connect(lambda: self.start_app_with_mode("cloud", self.api_input.text()))
         layout.addWidget(btn_cloud)
@@ -193,7 +174,7 @@ class VoiceTyperApp(QMainWindow):
         layout.addWidget(self.progressbar)
         
         self.text_preview = QTextEdit()
-        self.text_preview.setPlaceholderText("Waiting for speech...")
+        self.text_preview.setPlaceholderText("Transcription preview...")
         layout.addWidget(self.text_preview)
         
         footer = QHBoxLayout()
@@ -214,16 +195,6 @@ class VoiceTyperApp(QMainWindow):
         layout.addLayout(footer)
         
         self.stack.addWidget(page)
-
-    def mousePressEvent(self, event):
-        if event.button() == Qt.MouseButton.LeftButton:
-            self._drag_pos = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
-            event.accept()
-
-    def mouseMoveEvent(self, event):
-        if event.buttons() == Qt.MouseButton.LeftButton:
-            self.move(event.globalPosition().toPoint() - self._drag_pos)
-            event.accept()
 
     def start_app_with_mode(self, mode, api_key=""):
         self.config.update({
@@ -295,7 +266,6 @@ class VoiceTyperApp(QMainWindow):
                     self.signals.preview.emit(text)
                     self.typer.type_text(text)
                 else: self.signals.status.emit("SILENCE")
-                # Removed os.remove so you can play it back
         except: self.signals.status.emit("ERROR")
         self.signals.status.emit("READY")
         self.label_status.setStyleSheet("font-size: 18px; font-weight: 900; color: #9ece6a; margin: 5px;")
