@@ -1,0 +1,17 @@
+# GUI and System Integration
+PyQt6==6.11.0
+pynput==1.8.1
+evdev==1.9.3
+pystray==0.19.5
+Pillow==12.2.0
+
+# Speech to Text (Local)
+faster-whisper==1.2.1
+numpy<2.0.0
+huggingface-hub
+
+# Speech to Text (Cloud) & Refinement
+openai
+
+# Audio Utilities
+# Note: arecord and aplay must be installed via system packages (alsa-utils)
