@@ -4,12 +4,12 @@ import threading
 import time
 
 class TyperController:
-    def __init__(self, on_press_callback, on_release_callback, hotkey="KEY_LEFTCTRL", mode="hold"):
+    def __init__(self, on_press_callback, on_release_callback, hotkey="KEY_RIGHTALT", mode="hold"):
         self.on_press_callback = on_press_callback
         self.on_release_callback = on_release_callback
         self.threads = []
         self.running = False
-        self.trigger_code = getattr(ecodes, hotkey, ecodes.KEY_LEFTCTRL)
+        self.trigger_code = getattr(ecodes, hotkey, ecodes.KEY_RIGHTALT)
         self.mode = mode
         self.is_active = False
         

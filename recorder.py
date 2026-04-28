@@ -46,3 +46,9 @@ class Recorder:
                     pass
                 return self.temp_filename
         return None
+
+    def play_last(self):
+        if os.path.exists(self.trimmed_filename):
+            subprocess.Popen(["aplay", self.trimmed_filename], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        elif os.path.exists(self.temp_filename):
+            subprocess.Popen(["aplay", self.temp_filename], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

@@ -3,10 +3,10 @@ import os
 import threading
 import time
 import json
+import subprocess
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QVBoxLayout, QHBoxLayout, QWidget, 
                              QLabel, QProgressBar, QTextEdit, QPushButton, QLineEdit, QStackedWidget, QComboBox)
-from PyQt6.QtCore import Qt, pyqtSignal, QObject, QTimer, QPropertyAnimation, QEasingCurve, QPoint
-from PyQt6.QtGui import QColor, QFont
+from PyQt6.QtCore import Qt, pyqtSignal, QObject, QTimer, QPoint
 from recorder import Recorder
 from transcriber import Transcriber
 from typer_controller import TyperController
@@ -25,9 +25,8 @@ class VoiceTyperApp(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Voice Typer")
-        self.setFixedSize(300, 220)
+        self.setFixedSize(300, 240)
         
-        # Frameless and Always on Top
         self.setWindowFlags(
             Qt.WindowType.WindowStaysOnTopHint | 
             Qt.WindowType.FramelessWindowHint |
@@ -50,7 +49,7 @@ class VoiceTyperApp(QMainWindow):
         self.typer = TyperController(
             on_press_callback=lambda: self.signals.trigger_press.emit(), 
             on_release_callback=lambda: self.signals.trigger_release.emit(),
-            hotkey=self.config.get("hotkey", "KEY_LEFTCTRL"),
+            hotkey=self.config.get("hotkey", "KEY_RIGHTALT"),
             mode=self.config.get("trigger_mode", "hold")
         )
         
@@ -62,7 +61,7 @@ class VoiceTyperApp(QMainWindow):
         self.typer.start_listening()
 
     def load_config(self):
-        defaults = {"mode": None, "api_key": "", "hotkey": "KEY_LEFTCTRL", "trigger_mode": "hold"}
+        defaults = {"mode": None, "api_key": "", "hotkey": "KEY_RIGHTALT", "trigger_mode": "hold"}
         if os.path.exists(CONFIG_FILE):
             with open(CONFIG_FILE, "r") as f:
                 data = json.load(f)
@@ -74,7 +73,6 @@ class VoiceTyperApp(QMainWindow):
             json.dump(self.config, f)
 
     def setup_ui(self):
-        # Container with border radius
         self.main_container = QWidget()
         self.main_container.setObjectName("MainContainer")
         self.main_container.setStyleSheet("""
@@ -124,7 +122,6 @@ class VoiceTyperApp(QMainWindow):
         main_layout = QVBoxLayout(self.main_container)
         main_layout.setContentsMargins(12, 12, 12, 12)
         
-        # Draggable header
         header = QHBoxLayout()
         title = QLabel("VOICE TYPER")
         title.setStyleSheet("font-weight: bold; color: #7aa2f7; font-size: 10px; letter-spacing: 1px;")
@@ -140,25 +137,20 @@ class VoiceTyperApp(QMainWindow):
         self.stack = QStackedWidget()
         main_layout.addWidget(self.stack)
         
-        # Screen 1: Settings
         self.init_selection_screen()
-        # Screen 2: Main
         self.init_main_screen()
         
-        if self.config["mode"]:
-            self.start_app_with_mode(self.config["mode"], self.config["api_key"])
-        else:
-            self.stack.setCurrentIndex(0)
+        if self.config["mode"]: self.start_app_with_mode(self.config["mode"], self.config["api_key"])
+        else: self.stack.setCurrentIndex(0)
 
     def init_selection_screen(self):
         page = QWidget()
         layout = QVBoxLayout(page)
         layout.setSpacing(8)
         
-        # Settings row
         s_layout = QHBoxLayout()
         self.combo_key = QComboBox()
-        self.combo_key.addItems(["KEY_LEFTCTRL", "KEY_RIGHTCTRL", "KEY_LEFTALT", "KEY_SPACE"])
+        self.combo_key.addItems(["KEY_RIGHTALT", "KEY_LEFTCTRL", "KEY_RIGHTCTRL", "KEY_LEFTALT", "KEY_SPACE"])
         self.combo_key.setCurrentText(self.config["hotkey"])
         
         self.combo_mode = QComboBox()
@@ -208,6 +200,12 @@ class VoiceTyperApp(QMainWindow):
         self.label_hint = QLabel("")
         self.label_hint.setStyleSheet("font-size: 9px; color: #565f89;")
         footer.addWidget(self.label_hint)
+
+        self.btn_play = QPushButton("▶ PLAY")
+        self.btn_play.setFixedSize(60, 20)
+        self.btn_play.setStyleSheet("font-size: 9px; font-weight: bold; color: #7aa2f7;")
+        self.btn_play.clicked.connect(self.recorder.play_last)
+        footer.addWidget(self.btn_play)
         
         btn_set = QPushButton("⚙")
         btn_set.setFixedSize(20, 20)
@@ -297,7 +295,7 @@ class VoiceTyperApp(QMainWindow):
                     self.signals.preview.emit(text)
                     self.typer.type_text(text)
                 else: self.signals.status.emit("SILENCE")
-                os.remove(audio_file)
+                # Removed os.remove so you can play it back
         except: self.signals.status.emit("ERROR")
         self.signals.status.emit("READY")
         self.label_status.setStyleSheet("font-size: 18px; font-weight: 900; color: #9ece6a; margin: 5px;")
