@@ -26,7 +26,7 @@ class VoiceTyperApp(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Voice Typer")
-        self.setFixedSize(300, 280)
+        self.setFixedSize(300, 310) # Slightly taller to fit Save button
         self.setWindowFlags(Qt.WindowType.WindowStaysOnTopHint)
         
         self.signals = WorkerSignals()
@@ -72,8 +72,8 @@ class VoiceTyperApp(QMainWindow):
         self.main_container = QWidget()
         self.setStyleSheet("""
             QMainWindow { background-color: #1a1b26; }
-            QLabel { color: #a9b1d6; font-family: 'Segoe UI', sans-serif; }
-            QPushButton { background-color: #24283b; color: #c0caf5; border: 1px solid #414868; border-radius: 4px; padding: 4px; }
+            QLabel { color: #a9b1d6; font-family: 'Segoe UI', sans-serif; font-size: 11px; }
+            QPushButton { background-color: #24283b; color: #c0caf5; border: 1px solid #414868; border-radius: 4px; padding: 5px; }
             QPushButton:hover { background-color: #414868; }
             QLineEdit, QComboBox, QTextEdit { background-color: #24283b; color: #c0caf5; border: 1px solid #414868; padding: 4px; }
             QComboBox QAbstractItemView { background-color: #1a1b26; color: #c0caf5; selection-background-color: #3d59a1; }
@@ -91,25 +91,33 @@ class VoiceTyperApp(QMainWindow):
 
     def init_selection_screen(self):
         page = QWidget(); layout = QVBoxLayout(page)
-        title = QLabel("VOICE TYPER SETUP"); title.setAlignment(Qt.AlignmentFlag.AlignCenter); layout.addWidget(title)
+        title = QLabel("SETTINGS"); title.setAlignment(Qt.AlignmentFlag.AlignCenter); title.setStyleSheet("font-weight:bold; color:#7aa2f7; font-size:14px"); layout.addWidget(title)
         
         row1 = QHBoxLayout(); self.combo_key = QComboBox(); self.combo_key.addItems(["KEY_RIGHTALT", "KEY_LEFTCTRL", "KEY_RIGHTCTRL", "KEY_SPACE"])
         self.combo_key.setCurrentText(self.config["hotkey"]); self.combo_mode = QComboBox(); self.combo_mode.addItems(["hold", "toggle"])
         self.combo_mode.setCurrentText(self.config["trigger_mode"]); row1.addWidget(self.combo_key); row1.addWidget(self.combo_mode); layout.addLayout(row1)
         
         row2 = QHBoxLayout(); self.combo_lang = QComboBox(); self.combo_lang.addItems(["auto", "en", "ar", "fr", "es"])
-        self.combo_lang.setCurrentText(self.config["language"]); row2.addWidget(QLabel("Lang:")); row2.addWidget(self.combo_lang); layout.addLayout(row2)
+        self.combo_lang.setCurrentText(self.config["language"]); row2.addWidget(QLabel("Language:")); row2.addWidget(self.combo_lang); layout.addLayout(row2)
         
-        self.check_refine = QCheckBox("Smart Punctuation (Requires Cloud)"); self.check_refine.setChecked(self.config["refine"]); layout.addWidget(self.check_refine)
+        self.check_refine = QCheckBox("Smart Punctuation (Cloud only)"); self.check_refine.setChecked(self.config["refine"]); layout.addWidget(self.check_refine)
         
-        btn_local = QPushButton("LOCAL MODE"); btn_local.clicked.connect(lambda: self.start_app_with_mode("local")); layout.addWidget(btn_local)
+        layout.addWidget(QLabel("--- API KEY (Only for Cloud Mode) ---"))
         self.api_input = QLineEdit(); self.api_input.setPlaceholderText("Groq API Key..."); self.api_input.setText(self.config["api_key"]); layout.addWidget(self.api_input)
-        btn_cloud = QPushButton("CLOUD MODE"); btn_cloud.clicked.connect(lambda: self.start_app_with_mode("cloud", self.api_input.text())); layout.addWidget(btn_cloud)
+
+        btn_apply = QPushButton("APPLY & SAVE"); btn_apply.setStyleSheet("background-color: #3d59a1; font-weight: bold; margin-top: 5px;"); btn_apply.clicked.connect(self.apply_changes); layout.addWidget(btn_apply)
+
+        layout.addWidget(QLabel("--- Switch Modes ---"))
+        mode_layout = QHBoxLayout()
+        btn_local = QPushButton("USE LOCAL"); btn_local.clicked.connect(lambda: self.start_app_with_mode("local")); mode_layout.addWidget(btn_local)
+        btn_cloud = QPushButton("USE CLOUD"); btn_cloud.clicked.connect(lambda: self.start_app_with_mode("cloud", self.api_input.text())); mode_layout.addWidget(btn_cloud)
+        layout.addLayout(mode_layout)
+        
         self.stack.addWidget(page)
 
     def init_main_screen(self):
         page = QWidget(); layout = QVBoxLayout(page); layout.setContentsMargins(0, 0, 0, 0)
-        self.label_status = QLabel("READY"); self.label_status.setAlignment(Qt.AlignmentFlag.AlignCenter); self.label_status.setStyleSheet("font-size:18px; font-weight:900; color:#9ece6a"); layout.addWidget(self.label_status)
+        self.label_status = QLabel("READY"); self.label_status.setAlignment(Qt.AlignmentFlag.AlignCenter); self.label_status.setStyleSheet("font-size:18px; font-weight:900; color:#9ece6a; margin:5px"); layout.addWidget(self.label_status)
         self.progressbar = QProgressBar(); self.progressbar.setFixedHeight(4); self.progressbar.setTextVisible(False); layout.addWidget(self.progressbar)
         self.text_preview = QTextEdit(); self.text_preview.setReadOnly(True); self.text_preview.setStyleSheet("color:#9ece6a; font-size:10px"); layout.addWidget(self.text_preview)
         footer = QHBoxLayout(); self.label_hint = QLabel(""); self.label_hint.setStyleSheet("font-size:9px; color:#565f89"); footer.addWidget(self.label_hint)
@@ -122,13 +130,41 @@ class VoiceTyperApp(QMainWindow):
         menu = QMenu(); show_act = QAction("Show", self); show_act.triggered.connect(self.show); quit_act = QAction("Quit", self); quit_act.triggered.connect(QApplication.instance().quit)
         menu.addActions([show_act, quit_act]); self.tray.setContextMenu(menu); self.tray.show()
 
+    def apply_changes(self):
+        # Update config from UI
+        self.config.update({
+            "api_key": self.api_input.text(),
+            "hotkey": self.combo_key.currentText(),
+            "trigger_mode": self.combo_mode.currentText(),
+            "language": self.combo_lang.currentText(),
+            "refine": self.check_refine.isChecked()
+        })
+        self.save_config()
+        self.typer.update_settings(self.config["hotkey"], self.config["trigger_mode"])
+        
+        # If we already have a transcriber, just go back. Otherwise, it must be first run.
+        if self.transcriber:
+            self.on_model_ready() # Reset hint text
+            self.stack.setCurrentIndex(1)
+        else:
+            # First run behavior: Default to Local if nothing selected yet
+            mode = self.config.get("mode", "local")
+            self.start_app_with_mode(mode, self.config["api_key"])
+
     def start_app_with_mode(self, mode, api_key=""):
-        self.config.update({"mode":mode, "api_key":api_key, "hotkey":self.combo_key.currentText(), "trigger_mode":self.combo_mode.currentText(), "language":self.combo_lang.currentText(), "refine":self.check_refine.isChecked()})
-        self.save_config(); self.typer.update_settings(self.config["hotkey"], self.config["trigger_mode"])
+        self.config.update({"mode": mode, "api_key": api_key})
+        self.config.update({
+            "hotkey": self.combo_key.currentText(),
+            "trigger_mode": self.combo_mode.currentText(),
+            "language": self.combo_lang.currentText(),
+            "refine": self.check_refine.isChecked()
+        })
+        self.save_config()
+        self.typer.update_settings(self.config["hotkey"], self.config["trigger_mode"])
         self.stack.setCurrentIndex(1); self.update_status("LOADING"); self.update_progress(-1)
         threading.Thread(target=self.load_transcriber, args=(mode, api_key), daemon=True).start()
 
-    def reset_mode(self): self.config["mode"] = None; self.stack.setCurrentIndex(0)
+    def reset_mode(self): self.stack.setCurrentIndex(0)
     def load_transcriber(self, mode, api_key):
         try: self.transcriber = Transcriber(mode=mode, api_key=api_key); self.signals.model_loaded.emit()
         except: self.signals.status.emit("ERROR")
