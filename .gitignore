@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+pip-log.txt
+pip-delete-this-directory.txt
+.venv
+bin/
+lib/
+include/
+share/
+
+# Audio / Temp Files
+*.wav
+temp_raw.wav
+temp_recording.wav
+
+# Configuration & Keys
+config.json
+*.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDEs
+.vscode/
+.idea/
