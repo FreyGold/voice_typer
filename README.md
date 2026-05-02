@@ -7,7 +7,6 @@ A high-performance, local/cloud GUI speech-to-text recorder that types into any 
   - **Local**: Uses `faster-whisper` (Small model) for private, offline transcription.
   - **Cloud**: Uses `Groq (Whisper-Large-V3-Turbo)` for near-instant, high-accuracy results.
 - **Smart Punctuation**: Uses Llama-3.1 to intelligently add punctuation and grammar to your speech.
-- **Egyptian Dialect Support**: Specifically tuned to handle Egyptian Arabic vocabulary and natural flow.
 - **Wayland Optimized**: Uses `evdev` for global hotkeys and a clipboard-bridge for reliable typing in any app.
 - **System Tray**: Minimizes to the tray to stay out of your way.
 - **Push-to-Talk or Toggle**: Choose between holding a key or tapping to record.
