@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=Voice Typer
+Comment=Transcribe voice to text and type it automatically
+Exec=bash -c "cd '$(dirname %k)/..' && ./run.sh"
+Icon=/home/frey/.local/share/icons/voice-typer.svg
+Type=Application
+Categories=Utility;AudioVideo;
+Terminal=false
+StartupNotify=true
+Terminal=false
