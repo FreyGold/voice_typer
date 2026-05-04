@@ -10,6 +10,7 @@ A high-performance, local/cloud GUI speech-to-text recorder that types into any 
 - **Egyptian Dialect Support**: Specifically tuned to handle Egyptian Arabic vocabulary.
 - **Cross-Platform Launchers**: Native Start Menu/Dock support for all OSs.
 
+
 ## 🛠 System Dependencies
 
 Before installing Python packages, ensure your system has the required audio and clipboard libraries:
