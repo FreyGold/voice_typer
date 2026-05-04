@@ -38,10 +38,18 @@ class TyperController:
         self._setup_platform_mapping()
 
     def _setup_platform_mapping(self):
+        if not hasattr(self, 'uinput'):
+            self.uinput = None
+            
         if sys.platform.startswith('linux') and evdev:
             # Linux (evdev for reliable global hotkeys on Wayland/X11)
             self.trigger_code = getattr(ecodes, self.hotkey_str, ecodes.KEY_RIGHTALT)
             self.use_evdev = True
+            if self.uinput is None:
+                try:
+                    self.uinput = evdev.UInput()
+                except Exception as e:
+                    print(f"Could not create UInput: {e}")
         else:
             # Windows/Mac (pynput)
             mapping = {
@@ -160,9 +168,23 @@ class TyperController:
         time.sleep(0.2)
         try:
             pyperclip.copy(text + " ")
-            modifier = Key.cmd if sys.platform == 'darwin' else Key.ctrl
-            with self.controller.pressed(modifier):
-                self.controller.press('v')
-                self.controller.release('v')
+            if self.use_evdev and hasattr(self, 'uinput') and self.uinput:
+                # Use evdev UInput to simulate Ctrl+V (works on Wayland natively)
+                self.uinput.write(ecodes.EV_KEY, ecodes.KEY_LEFTCTRL, 1)
+                self.uinput.syn()
+                time.sleep(0.05)
+                self.uinput.write(ecodes.EV_KEY, ecodes.KEY_V, 1)
+                self.uinput.syn()
+                time.sleep(0.05)
+                self.uinput.write(ecodes.EV_KEY, ecodes.KEY_V, 0)
+                self.uinput.syn()
+                time.sleep(0.05)
+                self.uinput.write(ecodes.EV_KEY, ecodes.KEY_LEFTCTRL, 0)
+                self.uinput.syn()
+            else:
+                modifier = Key.cmd if sys.platform == 'darwin' else Key.ctrl
+                with self.controller.pressed(modifier):
+                    self.controller.press('v')
+                    self.controller.release('v')
         except Exception as e:
             print(f"Typing error: {e}")
