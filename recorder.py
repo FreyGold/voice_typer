@@ -1,57 +1,92 @@
-import subprocess
 import os
-import signal
-import time
-import numpy as np
 import wave
+import numpy as np
+import sounddevice as sd
+import threading
+import tempfile
 
 class Recorder:
     def __init__(self, samplerate=16000, channels=1):
         self.samplerate = samplerate
         self.channels = channels
-        self.process = None
-        self.temp_filename = os.path.join(os.getcwd(), "temp_raw.wav")
-        self.trimmed_filename = os.path.join(os.getcwd(), "temp_recording.wav")
+        self.temp_dir = os.path.join(tempfile.gettempdir(), "voice-typer")
+        os.makedirs(self.temp_dir, exist_ok=True)
+        self.temp_filename = os.path.join(self.temp_dir, "temp_raw.wav")
+        self.trimmed_filename = os.path.join(self.temp_dir, "temp_recording.wav")
+        self.recording_data = []
+        self.stream = None
+        self.is_recording = False
+
+    def _audio_callback(self, indata, frames, time, status):
+        if status:
+            print(f"Audio Callback Status: {status}")
+        self.recording_data.append(indata.copy())
 
     def start(self):
+        # Cleanup old files
         for f in [self.temp_filename, self.trimmed_filename]:
             if os.path.exists(f):
                 try: os.remove(f)
                 except: pass
 
-        command = ["arecord", "-f", "S16_LE", "-r", str(self.samplerate), "-c", str(self.channels), "-t", "wav", self.temp_filename]
-        self.process = subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        self.recording_data = []
+        self.is_recording = True
+        try:
+            self.stream = sd.InputStream(
+                samplerate=self.samplerate,
+                channels=self.channels,
+                dtype='int16',
+                callback=self._audio_callback
+            )
+            self.stream.start()
+        except Exception as e:
+            print(f"Recorder: Start Error: {e}")
+            self.is_recording = False
 
     def stop(self):
-        if self.process:
-            self.process.send_signal(signal.SIGINT)
+        if self.stream:
             try:
-                self.process.wait(timeout=1)
-            except:
-                self.process.kill()
-                self.process.wait()
-            self.process = None
-            
-            if os.path.exists(self.temp_filename) and os.path.getsize(self.temp_filename) > 1000:
-                return self.trim_silence_python(self.temp_filename, self.trimmed_filename)
-        return None
+                self.stream.stop()
+                self.stream.close()
+            except Exception as e:
+                print(f"Recorder: Stop Error: {e}")
+            self.stream = None
+        self.is_recording = False
 
-    def trim_silence_python(self, input_file, output_file):
+        if not self.recording_data:
+            return None
+
+        # Concatenate all blocks
+        audio_data = np.concatenate(self.recording_data, axis=0)
+        
+        # Save raw recording
+        self._write_wav(self.temp_filename, audio_data)
+        
+        if len(audio_data) > 1000:
+            return self.trim_silence_python(audio_data, self.trimmed_filename)
+        return self.temp_filename
+
+    def _write_wav(self, filename, data):
+        with wave.open(filename, 'wb') as wf:
+            wf.setnchannels(self.channels)
+            wf.setsampwidth(2) # 16-bit
+            wf.setframerate(self.samplerate)
+            wf.writeframes(data.tobytes())
+
+    def trim_silence_python(self, audio_data, output_file):
         try:
-            with wave.open(input_file, 'rb') as wav:
-                params = wav.getparams()
-                frames = wav.readframes(params.nframes)
-                # Convert buffer to numpy array
-                audio_data = np.frombuffer(frames, dtype=np.int16)
-
-            # Calculate energy/amplitude
+            # Flatten if multi-channel (though we use mono)
+            flat_data = audio_data.flatten()
+            
             # Threshold: ~500 is a good starting point for -30dB approx
             threshold = 500 
             
             # Find indices where amplitude exceeds threshold
-            mask = np.abs(audio_data) > threshold
+            mask = np.abs(flat_data) > threshold
             if not np.any(mask):
-                return input_file # Fallback if entirely silent
+                # Fallback: just write the raw data to output_file if silent
+                self._write_wav(output_file, audio_data)
+                return output_file
 
             # Get first and last active index
             start_idx = np.argmax(mask)
@@ -60,26 +95,30 @@ class Recorder:
             # Add a small padding (0.1s) to avoid clipping words
             padding = int(0.1 * self.samplerate)
             start_idx = max(0, start_idx - padding)
-            end_idx = min(len(audio_data), end_idx + padding)
+            end_idx = min(len(flat_data), end_idx + padding)
 
             trimmed_data = audio_data[start_idx:end_idx]
 
             # Write trimmed file
-            with wave.open(output_file, 'wb') as wav_out:
-                wav_out.setparams(params)
-                wav_out.writeframes(trimmed_data.tobytes())
-
-            raw_size = os.path.getsize(input_file)
-            trim_size = os.path.getsize(output_file)
-            reduction = 100 - (trim_size / raw_size * 100)
-            print(f"Python Trim: {raw_size} -> {trim_size} bytes (Reduced {reduction:.1f}%)")
+            self._write_wav(output_file, trimmed_data)
             
+            print(f"Trim: {len(audio_data)} -> {len(trimmed_data)} frames")
             return output_file
         except Exception as e:
-            print(f"Python Trim Error: {e}")
-            return input_file
+            print(f"Trim Error: {e}")
+            self._write_wav(output_file, audio_data)
+            return output_file
 
     def play_last(self):
         target = self.trimmed_filename if os.path.exists(self.trimmed_filename) else self.temp_filename
         if os.path.exists(target):
-            subprocess.Popen(["aplay", target], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            threading.Thread(target=self._play_thread, args=(target,), daemon=True).start()
+
+    def _play_thread(self, target):
+        try:
+            with wave.open(target, 'rb') as wf:
+                data = np.frombuffer(wf.readframes(wf.getnframes()), dtype=np.int16)
+                sd.play(data, self.samplerate)
+                sd.wait()
+        except Exception as e:
+            print(f"Playback Error: {e}")

@@ -29,6 +29,11 @@ class VoiceTyperApp(QMainWindow):
         self.setFixedSize(300, 310) # Slightly taller to fit Save button
         self.setWindowFlags(Qt.WindowType.WindowStaysOnTopHint)
         
+        # Try to load custom icon
+        self.icon_path = os.path.expanduser("~/.local/share/icons/voice-typer.svg")
+        if os.path.exists(self.icon_path):
+            self.setWindowIcon(QIcon(self.icon_path))
+        
         self.signals = WorkerSignals()
         self.signals.status.connect(self.update_status)
         self.signals.preview.connect(self.update_preview)
@@ -93,7 +98,7 @@ class VoiceTyperApp(QMainWindow):
         page = QWidget(); layout = QVBoxLayout(page)
         title = QLabel("SETTINGS"); title.setAlignment(Qt.AlignmentFlag.AlignCenter); title.setStyleSheet("font-weight:bold; color:#7aa2f7; font-size:14px"); layout.addWidget(title)
         
-        row1 = QHBoxLayout(); self.combo_key = QComboBox(); self.combo_key.addItems(["KEY_RIGHTALT", "KEY_LEFTCTRL", "KEY_RIGHTCTRL", "KEY_SPACE"])
+        row1 = QHBoxLayout(); self.combo_key = QComboBox(); self.combo_key.addItems(["KEY_RIGHTALT", "KEY_LEFTCTRL", "KEY_RIGHTCTRL", "KEY_SPACE", "KEY_CAPSLOCK", "KEY_F10"])
         self.combo_key.setCurrentText(self.config["hotkey"]); self.combo_mode = QComboBox(); self.combo_mode.addItems(["hold", "toggle"])
         self.combo_mode.setCurrentText(self.config["trigger_mode"]); row1.addWidget(self.combo_key); row1.addWidget(self.combo_mode); layout.addLayout(row1)
         
@@ -126,7 +131,13 @@ class VoiceTyperApp(QMainWindow):
         layout.addLayout(footer); self.stack.addWidget(page)
 
     def setup_tray(self):
-        self.tray = QSystemTrayIcon(self); from PyQt6.QtWidgets import QStyle; self.tray.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_DriveHDIcon))
+        self.tray = QSystemTrayIcon(self)
+        if os.path.exists(self.icon_path):
+            self.tray.setIcon(QIcon(self.icon_path))
+        else:
+            from PyQt6.QtWidgets import QStyle
+            self.tray.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_DriveHDIcon))
+        
         menu = QMenu(); show_act = QAction("Show", self); show_act.triggered.connect(self.show); quit_act = QAction("Quit", self); quit_act.triggered.connect(QApplication.instance().quit)
         menu.addActions([show_act, quit_act]); self.tray.setContextMenu(menu); self.tray.show()
 
@@ -172,7 +183,8 @@ class VoiceTyperApp(QMainWindow):
         self.is_loading_model = False; self.update_status("READY")
         self.label_hint.setText(f"{self.config['trigger_mode'].upper()} {self.config['hotkey'].replace('KEY_', '')} ({self.config['language'].upper()})")
         self.update_progress(0)
-    def update_status(self, text): self.label_status.setText(text)
+    def update_status(self, text): 
+        self.label_status.setText(text)
     def update_preview(self, text): self.text_preview.setText(text)
     def update_progress(self, v):
         if v == -1: self.progressbar.setRange(0, 0)
@@ -186,19 +198,44 @@ class VoiceTyperApp(QMainWindow):
 
     def stop_recording_ui(self):
         if self.is_recording:
-            self.is_recording = False; duration = time.time() - self.recording_start_time
-            if duration < 0.6: self.recorder.stop(); self.update_status("READY"); self.update_progress(0); return
+            # We don't set self.is_recording = False here immediately to prevent re-triggering 
+            # while the recorder is still closing its stream.
+            duration = time.time() - self.recording_start_time
+            if duration < 0.6: 
+                self.recorder.stop()
+                self.is_recording = False
+                self.update_status("READY"); self.update_progress(0)
+                return
+            
             self.update_status("WORKING"); self.update_progress(100)
             threading.Thread(target=self.process_audio, daemon=True).start()
 
     def process_audio(self):
         try:
             audio_file = self.recorder.stop()
+            # Reset recording flag AFTER the stream is definitely closed
+            self.is_recording = False
+            
             if audio_file and os.path.exists(audio_file):
                 text = self.transcriber.transcribe(audio_file, language=self.config["language"], refine=self.config["refine"])
                 if text.strip(): self.signals.preview.emit(text); self.typer.type_text(text)
-        except: self.signals.status.emit("ERROR")
+        except Exception as e:
+            print(f"Process Audio Error: {e}")
+            self.is_recording = False
+            self.signals.status.emit("ERROR")
+        
         self.signals.status.emit("READY"); self.signals.progress.emit(0)
 
 if __name__ == "__main__":
-    app = QApplication(sys.argv); window = VoiceTyperApp(); window.show(); sys.exit(app.exec())
+    app = QApplication(sys.argv)
+    app.setApplicationName("Voice Typer")
+    app.setDesktopFileName("voice-typer") # Matches voice-typer.desktop
+    
+    # Set global app icon
+    icon_path = os.path.expanduser("~/.local/share/icons/voice-typer.svg")
+    if os.path.exists(icon_path):
+        app.setWindowIcon(QIcon(icon_path))
+        
+    window = VoiceTyperApp()
+    window.show()
+    sys.exit(app.exec())
