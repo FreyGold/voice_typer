@@ -2,12 +2,10 @@
 PyQt6==6.11.0
 pynput==1.8.1
 pyperclip==1.9.0
-pystray==0.19.5
-Pillow==12.2.0
+evdev>=1.7.0; sys_platform == 'linux'
 
 # Audio and Recording
 sounddevice==0.5.1
-scipy==1.15.2
 
 # Speech to Text (Local)
 faster-whisper==1.2.1

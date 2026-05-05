@@ -68,10 +68,6 @@ class TyperController:
         self.mode = mode
         self.is_active = False
         self._setup_platform_mapping()
-        
-        if self.running:
-            self.stop_listening()
-            self.start_listening()
 
     def start_listening(self):
         self.running = True

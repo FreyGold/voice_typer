@@ -226,19 +226,28 @@ class VoiceTyperApp(QMainWindow):
         if not self.is_recording: self.is_recording = True; self.recording_start_time = time.time(); self.update_status("RECORDING"); self.recorder.start(); self.update_progress(-1)
     def stop_recording_ui(self):
         if self.is_recording:
+            self.is_recording = False
             duration = time.time() - self.recording_start_time
-            if duration < 0.6: self.recorder.stop(); self.is_recording = False; self.update_status("READY"); self.update_progress(0); return
+            if duration < 0.6: self.recorder.stop(); self.update_status("READY"); self.update_progress(0); return
             self.update_status("WORKING"); self.update_progress(100); threading.Thread(target=self.process_audio, daemon=True).start()
     def process_audio(self):
         try:
-            audio_file = self.recorder.stop(); self.is_recording = False
+            audio_file = self.recorder.stop()
             if audio_file and os.path.exists(audio_file):
                 text = self.transcriber.transcribe(audio_file, language=self.config["language"], refine=self.config["refine"])
                 if text.strip(): self.signals.preview.emit(text); self.typer.type_text(text)
-        except Exception as e: print(f"Process Audio Error: {e}"); self.is_recording = False; self.signals.status.emit("ERROR")
+        except Exception as e: print(f"Process Audio Error: {e}"); self.signals.status.emit("ERROR")
         self.signals.status.emit("READY"); self.signals.progress.emit(0)
 
 if __name__ == "__main__":
+    import socket
+    try:
+        lock_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        lock_socket.bind(("127.0.0.1", 47474))
+    except socket.error:
+        print("Another instance of Voice Typer is already running. Please close it from the system tray first.")
+        sys.exit(0)
+
     app = QApplication(sys.argv); app.setApplicationName("Voice Typer"); app.setDesktopFileName("voice-typer")
     icon_path = os.path.expanduser("~/.local/share/icons/voice-typer.svg")
     if os.path.exists(icon_path): app.setWindowIcon(QIcon(icon_path))
